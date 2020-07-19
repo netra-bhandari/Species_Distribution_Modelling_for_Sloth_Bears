@@ -1,0 +1,551 @@
+---
+title: "Species Distribution Model for the Indian Sloth Bear("Melursus ursinus")
+author: "Netra Bhandari"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+bibliography:  
+vignette: >
+  %\VignetteIndexEntry{Species Distribution Model for the Indian Sloth Bear}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  fig.width = 7,
+  fig.height = 6,
+  comment = "#>",
+  root.dir = "D:/SEMESTER 2/b5/project/sdm_slothbear_netrabhandari" # sets wd for all chunks
+)
+```
+
+
+Introduction
+============
+Sloth bears (Melursus ursinus) is an endemic species to the Indian subcontinent, potentially occupying habitats in India, Nepal and Sri Lanka. Krishnan (1972) reported that historically, Sloth bears were widely distributed and highly abundant across the Indian Peninsula; however, due to continuous habitat degradation and fragmentation, their distribution range has shrunken tremendously. Currently,they are confined mainly to five distinct regions, namely northern, northeastern, central, southeastern, and southwestern India (Yoganand et al. 2006).  They occupy a wide range of habitats on the Indian mainland including wet and dry tropical forests, savannahs, scrublands, and grasslands ( Yoganand et al. 2006). They are primarily a lowland species with habitats limited to below 1500 m, although the species may occur as high as 2,000 m in the forests of the Western Ghats (Seidensticker et al. 2011). They also occupy sparse forest covers where they hide in shelters like rocks, thickets or tree canopies during hot days and are exclusively nocturnal when they occupy fragmented habitats with human habitations (Joshi et al. 1999). Also, in some parts of India, Sloth Bears routinely raid peanut, maize, and fruit crops (Akhtar et al. 2004).  
+
+The exact distribution of sloth bear remains highly questioned. The limited information available is mostly based on local interviews and questionnaires and thus is highly unreliable and inadequate for taking conservation measures. At present, the IUCN has listed the species as "vulnerable" and is placed in Schedule I of India's Wildlife Protection Act (1972), (Puri et al., 2015 Yoganand et al., 2006). Some of the threats to the Sloth bear population include habitat fragmentation and degradation, roads and railroads, poaching, livestock farming and ranching, monoculture farming, extraction of minerals, quarrying, settlement of refugees. Many ranges encounter human - sloth conflict, which have led to numerous serious human injuries and many deaths Such incidents occur where people frequently use bear habitat, and where the habitat has become severely degraded, prompting bears to seek food and water in closer proximity to humans (Ratnayeke et al. 2014). "Dancing bears" is also a prominent threat to the wild population , wherein the small cubs are captured and used as an entertainment in cities and villages; however due to the Wildlife Protection Act this practice is now under check (D'Cruze et al., 2011)
+
+Ramest et al (2012) reported that Sloth bears are present in 174 protected areas of India. Protected areas with a deciduous habitat supports large contiguous forrests and thus a higher abundance of this species compared to other regions where the occurance is low (Yoganand 2006). Thus to address the current vulnerable population of Sloth bears , systematic methods need to be developed . This can be done by integrating detection probablities of the species in monitoring programs that leads to unbiased estimates (Karanth et al., 2009. Detection probabilities can be modelled as a function of measured habitat covariates and this can further help in predicting the effects of habitat changes and justify protection for key areas. Furthermore, many processes at landscape scale affect species distribution and abundance and for this collecting data would incur high costs. To achieve this effectively, modeling of species distribution through presence absence data is an useful approach (Jones 2011).  Besides mapping current species distributions, Species distribution moedels have been significant in predicting species' responses to environmental and anthropogenic modifications and monitoring range shifts in the face of climate change (Puri et al., 2015). However, SDMs have their own limitations. Unequal sampling efforts, detection biases and uncertainities due to false absences can lead to an underestimate of detection probabilities (Jones 2011). 
+
+In this study, I try to attempt modelling the distribution of Sloth bears, and examine the effects of environmental factors annual precipitation, ndvi, topographic ruggedness and human population) that influence this distribution . I expect that precipitation and ndvi will have higher influence on Sloth bear occurence in current scenario of covariates while topgraphy and human population would decrease Sloth bear presence. I also attempt to examine the distribution of this species in future climate scenario of 2050 , assuming that other covariates donot change. Although this will not be an accurate assessment but given the limited time for this project, I would use projections for only one covariate.
+
+Materials and methods
+=========================================================
+Data collection 
+===============
+In order to perform the Species Distribution Model for Sloth bears (Melursus ursinus) the following data was obtained from various sources : 
+1) Natural Earth Data - to generate the shapefile for India (R package "rnaturalearth"); chosen study area.
+
+2) IUCN expert map- range data as a shapefile (last assessement on 16 March 2016; https://www.iucnredlist.org/species/13143/45033815) , this site was chosen as it was the most comprehensive assesment available till date. 
+
+3) WorldClim Climate data - to get rasters of mean annual precipitation for current and future (2050) climatic scenarios. Precipitation is chosen as a covariate since it positively influences primary productivity, an important habitat driver of Sloth bears presence (R package "raster") (http://www.worldclim.org/bioclim)
+
+4) NDVI modis data - to get rasters of vegetation cover across India (https://earthexplorer.usgs.gov/) 
+
+5) Topography Ruggedness Index - calculated from elevation obtained from R package "SpatialEco"; terrain heterogeneity is considered an important covariate in sloth bear habitats as it occupies different terrains like dens and resting refuges and rough terrains which are ususally unfit for agriculture and pasture thus,devoid of human disturbances  (Puri et al., 2015)
+
+6) Population density - Human population density raster (India) for 2015 (https://www.worldpop.org/geodata/summary?id=92 ), is considered here as a negative influence on bear presence .
+
+
+
+```{r results='hide', message=FALSE, warning=FALSE}
+rm(list = ls())
+library(rms) 
+library(raster)
+library(dismo)
+library(rgdal)
+library(ellipse)
+library(rJava)
+library(XML)
+library(maptools)
+library(maps)
+library(mapdata)
+library(sf)
+library(rgeos)
+library(car)
+
+```
+
+1) Study Area 
+==================================
+```{r}
+library(rnaturalearth)
+library(rnaturalearthhires)
+world <- ne_countries()
+India <- ne_countries(country= 'India')
+plot(India)
+```
+
+2) IUCN expert map data for Sloth Bear ("Melursus ursinus"")
+=============================================================
+```{r}
+IUCN_sloth<- readOGR(dsn = ".", layer = "data_0", stringsAsFactors = FALSE)
+```
+
+3) WorldClim Climate data for mean annual precipitation
+=========================================================
+```{r}
+bio <-raster:: getData("worldclim", download = TRUE, var = "bio", res = 10) # current climatic scenario
+bio_50<- raster::getData('CMIP5', var='bio', res=10, rcp=85, model='AC', year=50) #climate scenario of the year 2050
+
+#' Variable | Description
+#' -------- | -----------
+#' BIO1 | Annual Mean Temperature
+#' BIO2 | Mean Diurnal Range (Mean of monthly (max temp - min temp))
+#' BIO3 | Isothermality (BIO2/BIO7) (* 100)
+#' BIO4 | Temperature Seasonality (standard deviation *100)
+#' BIO5 | Max Temperature of Warmest Month
+#' BIO6 | Min Temperature of Coldest Month
+#' BIO7 | Temperature Annual Range (BIO5-BIO6)
+#' BIO8 | Mean Temperature of Wettest Quarter
+#' BIO9 | Mean Temperature of Driest Quarter
+#' BIO10 | Mean Temperature of Warmest Quarter
+#' BIO11 | Mean Temperature of Coldest Quarter
+#' BIO12 | Annual Precipitation
+#' BIO13 | Precipitation of Wettest Month
+#' BIO14 | Precipitation of Driest Month
+#' BIO15 | Precipitation Seasonality (Coefficient of Variation)
+#' BIO16 | Precipitation of Wettest Quarter
+#' BIO17 | Precipitation of Driest Quarter
+#' BIO18 | Precipitation of Warmest Quarter
+#' BIO19 | Precipitation of Coldest Quarter
+```
+
+
+4) NDVI emodis data
+====================
+```{r}
+library(raster)
+ndvi_asia <- raster("sdm_slothbear_netrabhandari/ndvi2.tif")
+ndvi_india <- crop(ndvi_asia , extent(India)) 
+
+ndvi_india <- (ndvi_india*0.0001)#### multiply because emodis has a different value
+```
+
+5) Topography Ruggedness Index (TRI)
+=====================================
+```{r}
+library(spatialEco)
+ind_ele<- raster("sdm_slothbear_netrabhandari/IND_alt.grd") ##### TRI will be calculated from elevation in following steps in data processig step
+```
+
+6) Population density data 
+===========================
+```{r}
+ind_pop<- raster("sdm_slothbear_netrabhandari/ind_pop.grd")
+
+```
+
+
+Data pre-processing and plotting
+================================
+
+1)Processing worldclim data
+===========================
+```{r}
+biocrop <- crop(bio, extent(India))
+crs(biocrop)
+biocrop_50 <- crop(bio_50, extent(India))
+crs(biocrop_50)
+proj4string(biocrop_50) <- proj4string(biocrop)
+crs(biocrop_50)
+names(biocrop_50) <- names(biocrop) # assign same variable names
+
+```
+```{r, fig.height = 4}
+proj4string(India) <- proj4string(biocrop)
+```
+```{r, fig.height = 4}
+par(mfrow = c(1,2))
+plot(biocrop$bio12, main = "Annual Precipitation - Current") # using bio12 (annual precipitation ; chosen environmental variable)
+plot(biocrop_50$bio12,main = "Annual Precipitation - 2050")
+```
+
+2)Reprojection IUCN data 
+======================
+```{r}
+crs(IUCN_sloth) # check crs
+proj4string(IUCN_sloth) <- proj4string(India) # make crs same as of study area
+IUCN_sloth$BINOMIAL <- "Melursusursinus"
+IUCN_sloth$BINOMIAL
+```
+
+```{r, fig.height = 4}
+plot(IUCN_sloth,  main = "IUCN Sloth Bear Distribution in India")
+plot(India,add= TRUE)
+```
+
+3) NDVI data 
+=============
+```{r}
+
+proj4string(ndvi_india) <- proj4string(biocrop)
+plot(ndvi_india, main = "NDVI for India") #The value range of an NDVI is -1 to 1. Negative values of NDVI (values approaching -1) correspond to water. Values close to zero (-0.1 to 0.1) generally correspond to barren areas of rock, sand, or snow. Low, positive values represent shrub and grassland (approximately 0.2 to 0.4), while high values indicate temperate and tropical rainforests (values approaching 1).
+```
+4) Topographic ruggedness index (TRI) calculation
+===================================================
+```{r}
+ind_ele[is.na(ind_ele)] <- 0
+ind_ele_resampled <- projectRaster(ind_ele,biocrop)
+tri<- tri(ind_ele_resampled, exact = FALSE, fun = mean) 
+proj4string(tri) <- proj4string(biocrop)
+```
+
+```{r, fig.height=4}
+
+plot(tri, "rough", main = "Topographic Ruggedness Index for India")
+```
+5) Population denisty of India
+================================
+```{r,fig.height=4}
+proj4string(ind_pop) <- proj4string(biocrop)
+crs(ind_pop)
+ind_pop[is.na(ind_pop)] <- 0
+plot(ind_pop, main = "Population density of India per pixel")
+```
+
+
+6) Resampling of all the rasters to same resolution (this is done to make a raster stack)
+=========================================================================================
+```{r}
+#resample data to biocrop resolution of 10 degrees
+res(biocrop)
+ndvi_ressampled <- projectRaster(aggregate(ndvi_india),biocrop,method = 'bilinear') # aggregate is for taking mean value of the pixel
+res(ndvi_ressampled)
+```
+
+
+```{r}
+ind_pop_resampled <- projectRaster(aggregate(ind_pop),biocrop,method = 'bilinear')
+res(ind_pop_resampled)
+```
+
+```{r}
+tri_resampled <- projectRaster(tri,biocrop,method = 'ngb')
+res(tri)
+```
+7) Creating a raster stack of covariates
+=========================================
+```{r}
+stack <- raster::stack(biocrop$bio12,ndvi_ressampled, tri_resampled, ind_pop_resampled)### add dem 
+  stack[is.na(stack)] <- 0
+names(stack) <- c("Annual_precipitation","NDVI","TRI","Population_density")
+
+# here values are assigned 0 to areas which were showing "NA" due to change in resolution
+```
+
+```{r,fig.height=4}
+par(mfrow=c(2,2))
+plot(stack)
+```
+8) Checking for collinearity
+==============================
+```{r}
+cm <- cor(getValues(stack), use = "complete.obs")
+cm
+sel<- cm<0.7
+sel
+```
+
+```{r, fig.height=4}
+plotcorr(cm, col=ifelse(abs(cm) > 0.7, "red", "grey"))  ### Visual inspection of collinearity ###
+
+```
+9) Creating a presence absence matrix(data frame) from the IUCN data for Sloth bears
+=======================================================================================
+```{r}
+pam_sloth <- raster::rasterize(IUCN_sloth, biocrop$bio12)
+plot(pam_sloth)
+sloth_pres <- pam_sloth > 0.5
+```
+
+```{r}
+sloth_pres_df <- as(sloth_pres, "SpatialPointsDataFrame")
+names(sloth_pres_df) <- "sloth"
+library(sp)
+sloth_pres_df@data <- cbind(sloth_pres_df@data, raster::extract(stack, sloth_pres_df))
+head(sloth_pres_df)
+```
+
+```{r}
+plot(sloth_pres, main = "Sloth Presence Data")
+```
+
+```{r}
+
+presence <- na.omit(sloth_pres_df)
+head(presence)
+```
+
+```{r}
+plot(presence, main = "Sloth presence point data")
+```
+
+```{r}
+set.seed(2)
+background <- randomPoints(stack, 2000, presence)
+presence2 <- gridSample(presence, stack, n = 1)
+sloth_pres_df_1 <- SpatialPointsDataFrame(rbind(presence2, background),
+                data = data.frame("presence2" = rep(c(1,0), 
+                                  c(nrow(presence2), nrow(background)))),
+                                   match.ID = FALSE,
+                                   proj4string = CRS(projection(stack)))
+sloth_pres_df_1@data <- cbind(sloth_pres_df_1@data, raster::extract(stack, sloth_pres_df_1))
+head(sloth_pres_df_1)
+```
+
+
+
+
+
+
+
+Modelling
+=========
+```{r}
+# I have used a Generalized Linear Model (GLM) to model distribution of Sloth Bears (Presence absence data) along with selected covariates
+# Interaction between ndvi and mean annual precipitation is also considered here
+glm_sloth <- glm(presence2 ~ Annual_precipitation*NDVI+TRI+Population_density, data=sloth_pres_df_1, family = binomial)
+summary(glm_sloth)
+```
+
+```{r}
+plot(glm_sloth$residuals)
+```
+
+```{r}
+#### to predict the species it is necessary to convert the raster stack into a data frame
+library(car)
+sloth_pred <- predict(stack,glm_sloth, type = "response")
+```
+
+```{r}
+plot(sloth_pred, main = "Predicted Sloth Occurence")
+plot(IUCN_sloth, add=TRUE)
+plot(India, add=TRUE)
+```
+Cross validation
+=================
+```{r}
+library(dismo)
+#Calibration measures whether the predicted probabilities match the observed (relative) frequencies.
+set.seed(2)
+fold <- kfold(sloth_pres_df_1, k = 5, by = sloth_pres_df_1$presence2)
+# The variable cv_pred will contain the cross-validated 
+# predictions
+sloth_pres_df_1$cv_pred <- NA 
+for (i in unique(fold)) {
+  traindata <- sloth_pres_df_1[fold != i, ]
+  testdata <- sloth_pres_df_1[fold == i, ]
+  cv_model <-  glm(presence2 ~ Annual_precipitation*NDVI+TRI+Population_density, data=traindata, family = binomial)
+  sloth_pres_df_1$cv_pred[fold == i] <- predict(cv_model, testdata, type='response')  #### exponential corresponds to relative abundance 
+  head(sloth_pres_df_1) ### the cv_pred coloumn will show the relative abundance of that species
+}
+head(sloth_pres_df_1)
+
+```
+
+```{r}
+# to test model performance between training data and test data. Overfitted (i.e. too complex) models typically show (much) better performance on training than on test data.
+library(Hmisc)
+round(somers2(sloth_pres_df_1$cv_pred, sloth_pres_df_1$presence2), 2)
+round(somers2(predict(glm_sloth, sloth_pres_df_1, 
+type = "response"), sloth_pres_df_1$presence2), 2)
+```
+There is a no difference in model performance between training data and test data.
+
+Predicting presence absence data
+=================================
+```{r}
+#the predicted values will be either 1 for presence or 0 for absence
+#install.packages("PresenceAbsence")
+library(PresenceAbsence)
+padata <- cbind(seq_along(nrow(sloth_pres_df_1)),
+                sloth_pres_df_1$presence2,
+                predict(glm_sloth, sloth_pres_df_1, 
+                        type = "response"))
+presence.absence.summary(padata)
+```
+Variable importance 
+===================
+In order to Nlyae which covariates are important in determining Sloth bear distribution, the DALEX package was used. It also estimates individual predictions, how much the variable contributes to the prediction for that observation. DALEX package can be applied to all types of modelling approaches like maxent , randomForest , gam etc.
+```{r}
+library(DALEX2)
+# install_dependencies()
+sloth_pres_df_1 <- as(sloth_pres_df_1, "data.frame") ## convert it otherwise it wont work
+glm_explainer <- explain(glm_sloth, 
+                            data = sloth_pres_df_1[, c("Annual_precipitation","NDVI","TRI","Population_density")],
+                            y = sloth_pres_df_1[, "presence2"] ,
+                            predict_function = function(model, data) {predict(model, data, type = "response")},
+                            label = "glm")
+```
+Generating response curves
+==========================
+```{r}
+library(ingredients)
+glm_response <- partial_dependency(glm_explainer, N=50)
+```
+
+```{r}
+plot(glm_response)
+```
+
+```{r}
+fimp <- feature_importance(glm_explainer)
+```
+
+```{r}
+plot(fimp)
+
+```
+
+```{r}
+glm_loss <- function(observed, predicted, 
+                        background_weight = 100) {
+  background_sum <- sum(predicted[observed == 0])
+  -sum(log(predicted[observed==1] / background_sum))
+}
+fimp_2 <- feature_importance(glm_explainer, loss_function = glm_loss) 
+```
+
+Spatial prediction
+===============
+```{r}
+glmmap_sloth <- predict(stack, glm_sloth, type = "response")
+```
+Spatial prediction
+==================
+```{r, fig.height = 4}
+plot(glmmap_sloth)
+```
+
+ 
+Future prejections for the year 2050 
+==============================================
+It is assumed here that only the climate (mean annual precipitation in this case) is being changed over time and rest of the environmental variables i.e ndvi, landcover , tri and population remain constant.Essentially these would also change in future. However, due to time restrictions , I will restrict my analysis to only precipitation change. If given a chance for further assessment , I would model changes in rest of the variables.
+```{r}
+############## 2050 prejections
+#stack_50 <- raster::stack(biocrop_50$bio12, ndvi_ressampled,landcover2_resampled, tri, ind_ppp_resampled)
+stack_50 <- raster::stack(biocrop_50$bio12,ndvi_ressampled, tri, ind_pop_resampled)
+stack_50[is.na(stack_50)] <- 0
+names(stack_50) <- c("Annual_precipitation","NDVI","TRI","Population_density")
+sloth_pres_df_2 <- as(sloth_pres, "SpatialPointsDataFrame")
+names(sloth_pres_df) <- "sloth"
+library(sp)
+sloth_pres_df_2@data <- cbind(sloth_pres_df_2@data, raster::extract(stack_50, sloth_pres_df))
+presence_3 <- na.omit(sloth_pres_df_2)
+
+head(presence_3)
+set.seed(2)
+background <- randomPoints(stack_50, 2000, sloth_pres_df_2)
+presence4 <- gridSample(presence_3, stack_50, n = 1)
+sloth_pres_df_2 <- SpatialPointsDataFrame(rbind(presence4, background),
+                data = data.frame("presence3" = rep(c(1,0), 
+                                  c(nrow(presence4), nrow(background)))),
+                                   match.ID = FALSE,
+                                   proj4string = CRS(projection(stack_50)))
+sloth_pres_df_2@data <- cbind(sloth_pres_df_2@data, raster::extract(stack_50, sloth_pres_df_2))
+head(sloth_pres_df_2)
+class(sloth_pres_df_2)
+fulldata <- as(sloth_pres_df_2, "data.frame")
+```
+
+```{r}
+
+glm_sloth_50 <- glm(presence3 ~Annual_precipitation*NDVI+TRI+Population_density, data=sloth_pres_df_2, family = binomial)
+summary(glm_sloth_50)
+```
+
+```{r}
+
+
+sloth_pred_50 <- predict(stack_50, glm_sloth_50, type = "response")
+```
+
+```{r}
+
+plot(sloth_pred_50)
+```
+Cross validation
+=================
+```{r}
+#Calibration measures whether the predicted probabilities match the observed (relative) frequencies.
+set.seed(2)
+fold <- kfold(sloth_pres_df_2, k = 5, by = sloth_pres_df_2$presence3)
+# The variable cv_pred will contain the cross-validated 
+# predictions
+sloth_pres_df_2$cv_pred <- NA 
+for (i in unique(fold)) {
+  traindata <- sloth_pres_df_2[fold != i, ]
+  testdata <- sloth_pres_df_2[fold == i, ]
+  cv_model <-  glm(presence3 ~Annual_precipitation*NDVI+TRI+Population_density, data=traindata, family = gaussian)
+  sloth_pres_df_2$cv_pred[fold == i] <- predict(cv_model, testdata, type='response')  #### exponential corresponds to relative abundance 
+  head(sloth_pres_df_2) ### the cv_pred coloumn will show the relative abundance of that species
+}
+head(sloth_pres_df_2)
+```
+
+```{r}
+round(somers2(sloth_pres_df_2$cv_pred, sloth_pres_df_2$presence3), 2)
+round(somers2(predict(glm_sloth, sloth_pres_df_2, 
+type = "response"), sloth_pres_df_2$presence3), 2)
+
+```
+
+```{r}
+padata_50 <- cbind(seq_along(nrow(sloth_pres_df_2)),
+                sloth_pres_df_2$presence3,
+                predict(glm_sloth, sloth_pres_df_2, 
+                        type = "response"))
+presence.absence.summary(padata_50)
+```
+
+```{r}
+glmmap_sloth_50 <- predict(stack_50, glm_sloth_50, type = "response")
+plot(glmmap_sloth_50)
+```
+
+
+
+
+Results and Discussion
+=======================
+Upon data collection and data processing, the environmental variables ;i.e. Annual Precipitation, NDVI, Topographic Ruggedness Index(TRI), Population density and Landcover were stacked and check for collinearity. None othe variables were correlated >0.7 (threshold value). This led to the further steps of modelling. Since the data by IUCN for Sloth Bears was converted to presence absence matrix, a Generalised linear model was chosen as the most appropriate species distribution model. The model gave an AIC: 4250.4 .
+The following variables were highly positively significant (i.e important explanatory variables) : Annual_Precipitation, NDVI.
+
+Following independent variables were negatively significant : TRI, Population_density and Annual_Precipitation*NDVI. 
+
+As per literature, Precipitation and NDVI are indicators of primary productivity, thus an increase in either of them would increase the probability of occurence of Sloth bears (Karanth et al., 2009). The trend for TRI and population density also supports the literature that as terrain smoothness increases and population density increases , it is less likely to find Sloth bears (Karanth et al.,2009).   
+
+The predicted values of Sloth Bear using GLM shows higher presence probabilities in areas overlapping IUCN expert map ranges.Since this data is derived based from expert knowledge, further improvements on sampling can result in more exact predictions.
+Also, upon cross validation of data, there was no difference observed between the training and the testing data, with the model predictive power of 87%. This is also supported by the summary plots of the presence-absence model, wherein the predicted probabilities of presence data is higher than absences, AUC is 0.87 and the graph of observed vs predicted shows points quite overlapping.
+
+To further analyse this , response curves were plotted , which also showed that Annual Precipitation and NDVI increases and then levels off,  TRI and Population density decreases. NDVI and Annual precipitation were also the most important variables in predicting bear population.
+
+Additionally, a second analysis was carried out using the annual precipitation values of the year 2050. Rest of the variables were assumed to be constant . The variables in glm show the same results as last one however, the predicted values differ slightly. The predicted model shows 88% prediction power while observed values are 87%. The rest of the results are similar to the previous model. Thus more analysis is needed to spatially locate the differences in the two models.
+
+In all, it was expected that both precipitation and NDVI would increase the probability of Sloth bear presence. While human population and topographic features would decrease the probability. Both the models assessed here support our expectations.However, this analysis is not accurate as there are many caveats like only one variable was considered as changed in the future scenario. Thus, it is suggested that in further assesments , this should be taken into consideration along with more fine resolution data, adequate sampling data and current population density rasters. More disturbances to the habitats like occurence of roads, agricultural fields, poaching should also be quantified and analysed.
+
+References
+==========
+1.Akhtar, Naim, Harendra Singh Bargali, and N. P. S. Chauhan. "Sloth bear habitat use in disturbed and unprotected areas of Madhya Pradesh, India." Ursus 15.2 (2004): 203-212.
+
+2.D'Cruze, Neil, et al. "Dancing bears in India: A sloth bear status report." Ursus 22.2 (2011): 99-106.
+
+3.Jones, Julia PG. "Monitoring species abundance and distribution at the landscape scale." Journal of Applied Ecology 48.1 (2011): 9-13.
+
+4.Joshi, Anup R., James LD Smith, and David L. Garshelis. "Sociobiology of the myrmecophagous sloth bear in Nepal." Canadian Journal of Zoology 77.11 (1999): 1690-1704.
+
+5.Karanth, Krithi K., et al. "Patterns and determinants of mammal species occurrence in India." Journal of Applied Ecology 46.6 (2009): 1189-1200.
+ 
+6.Puri, Mahi, et al. "Multiscale distribution models for conserving widespread species: the case of sloth bear Melursus ursinus in India." Diversity and Distributions 21.9 (2015): 1087-1100.
+
+7.Ramesh, Tharmalingam, et al. "Factors affecting habitat patch use by sloth bears in Mudumalai Tiger Reserve, Western Ghats, India." Ursus 23.1 (2012): 78-86.
+
+8.Ratnayeke, Shyamala, et al. "Landscape characteristics of sloth bear range in Sri Lanka." Ursus 18.2 (2007): 189-203.
+
+9.Seidensticker, John, K. Yoganand, and A. J. T. Johnsingh. "Sloth bears living in seasonally dry tropical and moist broadleaf forests and their conservation." Dry forests of Asia: conservation and ecology. Smithsonian Institution Press, Washington, DC (2011): 217-236.
+
+10.Yoganand, K., et al. "Is the sloth bear in India secure? A preliminary report on distribution, threats and conservation requirements." Journal of the Bombay Natural History Society (2006).
